@@ -122,7 +122,7 @@
   </ImportGroup>
   <ProjectExtensions>
     <VisualStudio>
-      <UserProperties config.Debug.customdebug_esp8266_generic_debugger_type="universal" arduino.upload.port="COM4" />
+      <UserProperties config.Debug.customdebug_esp8266_generic_debugger_type="universal" config.Debug.customdebug_esp8266_nodemcuv2_debugger_type="universal" arduino.upload.port="COM8" />
     </VisualStudio>
   </ProjectExtensions>
 </Project>

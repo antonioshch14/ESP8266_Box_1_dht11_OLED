@@ -5,7 +5,8 @@
 #include <U8g2lib.h>
 //#include <Wire.h>
 
-#define DHTPIN 2
+#define DHTPIN 0
+int BUZPIN = 3;
 
 // AP Wi-Fi credentials
 const char* ssid = "DataTransfer";
@@ -26,7 +27,7 @@ unsigned int  TCPPort = 2390;
 
 WiFiClient    TCP_Client;
 
-U8G2_SSD1306_128X32_UNIVISION_F_SW_I2C u8g2(U8G2_R0,1,3);  
+U8G2_SSD1306_128X32_UNIVISION_F_SW_I2C u8g2(U8G2_R0,2,1);  
 class TimeSet {
 	int monthDays[12] = { 31,28,31,30,31,30,31,31,30,31,30,31 }; // API starts months from 1, this array starts from 0
 	int *shift;
@@ -200,23 +201,28 @@ private:
 
 task lasTimeReadSensor(2000);
 task sendRequestToServer(10000);
+task sendLogToSrver(30000);
 task refreshOLED(1000);
 task askTimeTask(20000);
+String fieldsInLogMes = "Device:2;get:3;Time general,Time device,Signal,Temp,Humid;";
 unsigned long UNIXtime;
 unsigned long actualtime;
 unsigned long lastNTPResponse;
-
+int contrast;
 void setup() {
 	//Serial.begin(115200);
 	dht.setup(DHTPIN, DHTesp::DHT11);
 	u8g2.begin();
 	u8g2.setFont(u8g2_font_crox1c_tf);
 	//Wire.begin();
-	WiFi.hostname("ESP1");      // DHCP Hostname (useful for finding device for static lease)
+	WiFi.hostname("ESP_Box_w_OLED");      // DHCP Hostname (useful for finding device for static lease)
 	WiFi.config(Own, TCP_Gateway, TCP_Subnet);
 	Check_WiFi_and_Connect_or_Reconnect();          // Checking For Connection
+	pinMode(BUZPIN, OUTPUT);
+	digitalWrite(BUZPIN, LOW);
 }
-void showOnOled(String line1, String line2,String line3) {
+void showOnOled(String line1, String line2,String line3,int contrast) {
+	u8g2.setContrast(contrast);
 	u8g2.clearBuffer();
 	u8g2.setCursor(0, 10);
 	u8g2.print(line1);
@@ -259,18 +265,26 @@ void askTime() {
 }
 
 
-void Send_Request_To_Server() {
+void Send_Log_To_Server() {
 	   	
 	if (TCP_Client.connected()) {
 		TCP_Client.setNoDelay(1);
-		TCP_Client.println("Device:" + Devicename + ";time:" + String(millis()) + ";signal:" +
-			String(WiFi.RSSI()) + ";temp:" + String(t) + ";humid:" + String(h)+";");
-		//Serial.print("- data stream: ");	Serial.println("Device:" + Devicename + ";" + "time:" + result + ";" + "signal:" + String(WiFi.RSSI()) + ";" + data);//Send sensor data
-
+		TCP_Client.println("Device:" + Devicename + ";get:2;" + String(millis()) + "," +
+			String(WiFi.RSSI()) + "," + String(t) + "," + String(h)+";");
+		
 	}
 
 }
+void Send_Request_To_Server() {
 
+	if (TCP_Client.connected()) {
+		TCP_Client.setNoDelay(1);
+		TCP_Client.println("Device:" + Devicename + ";time:" + String(millis()) + ";signal:" +
+			String(WiFi.RSSI()) + ";temp:" + String(t) + ";humid:" + String(h) + ";");
+			sendRequestToServer.period = 30000;
+	}
+
+}
 //====================================================================================
 
 void Check_WiFi_and_Connect_or_Reconnect() {
@@ -306,13 +320,10 @@ void Check_WiFi_and_Connect_or_Reconnect() {
 //====================================================================================
 
 void Tell_Server_we_are_there() {
-	// first make sure you got disconnected
-	//TCP_Client.stop();
-
-	// if sucessfully connected send connection message
+	
 	if (TCP_Client.connect(TCP_Server, TCPPort)) {
-		//Serial.println("<" + Devicename + "-CONNECTED>");
 		TCP_Client.println("<" + Devicename + "-CONNECTED>");
+		TCP_Client.println(fieldsInLogMes);
 	}
 	TCP_Client.setNoDelay(1);                                     // allow fast communication?
 }
@@ -326,6 +337,14 @@ void process_Msessage(String message) {
 			askTimeTask.ignor = true;
 			Time_set.SetCurrentTime(UNIXtime);
 		}
+	}
+	else if (message.indexOf("ON") != -1) {
+		Serial.println("LED on");
+		digitalWrite(BUZPIN, HIGH);
+	}
+	else if (message.indexOf("OFF") != -1) {
+		Serial.println("LED off");
+		digitalWrite(BUZPIN, LOW);
 	}
 }
 bool get_field_value(String Message, String field, unsigned long* value, int* index) {
@@ -363,13 +382,16 @@ void loop() {
 	if(lasTimeReadSensor.check()) readDHTSensor();
 	if (refreshOLED.check()) {
 		Time_set.updateDay();
-		showOnOled("tem=" + String(t), 
+		showOnOled("tem=" + String(t) +" "+String(WiFi.RSSI()),
 			"hum=" + String(h)+ " "+String(Time_set.NowHour) +":" + String(Time_set.NowMin), 
 			String(Time_set.NowYear) +"."+String(Time_set.NowMonth) + "." + String(Time_set.NowDay) + 
-			" " +  String(Time_set.NowSec));
+			" " +  String(Time_set.NowSec), contrast);
 	}
+	if (Time_set.NowHour>=0 && Time_set.NowHour<7 || Time_set.NowHour==23)contrast = 1;
+	else contrast = 255;
 	Check_WiFi_and_Connect_or_Reconnect();          // Checking For Connection
-	if(sendRequestToServer.check())  Send_Request_To_Server();
+	if(sendLogToSrver.check())  Send_Log_To_Server();
+	if (sendRequestToServer.check()) Send_Request_To_Server();
 	if (!TCP_Client.connected())  Tell_Server_we_are_there();
 	if (askTimeTask.check()) askTime();
 	if (TCP_Client.connected() && TCP_Client.available() > 0) process_Msessage(TCP_Client.readStringUntil('\r'));
