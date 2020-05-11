@@ -257,7 +257,7 @@ void askTime() {
 
 	if (TCP_Client.connected()) {
 		TCP_Client.setNoDelay(1);
-		TCP_Client.println("Device:" + Devicename + "get:1;");
+		TCP_Client.println("Device:" + Devicename + ";get:1;");
 		//Serial.print("- data stream: ");	Serial.println("Device:" + Devicename + ";" + "time:" + result + ";" + "signal:" + String(WiFi.RSSI()) + ";" + data);//Send sensor data
 
 	}
